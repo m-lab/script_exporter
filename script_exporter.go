@@ -67,12 +67,9 @@ func runScript(script *Script) (err error, rc int) {
 	stdin.Close()
 
 	if err = cmd.Run(); err != nil {
-		log.Infof("Command failed with error: %v", err)
-		if exitError, ok := err.(*exec.ExitError); ok {
-			rc = exitError.Sys().(syscall.WaitStatus).ExitStatus()
-		}
+		exitError, _ := err.(*exec.ExitError)
+		rc = exitError.Sys().(syscall.WaitStatus).ExitStatus()
 	} else {
-		log.Infof("Command succeeded with error: %v", err)
 		rc = cmd.ProcessState.Sys().(syscall.WaitStatus).ExitStatus()
 	}
 
