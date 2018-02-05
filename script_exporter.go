@@ -67,7 +67,7 @@ func runScript(script *Script) (err error, rc int) {
 	stdin.Close()
 
 	if err = cmd.Run(); err != nil {
-		exitError, _ := err.(*exec.ExitError)
+		exitError := err.(*exec.ExitError)
 		rc = exitError.Sys().(syscall.WaitStatus).ExitStatus()
 	} else {
 		rc = cmd.ProcessState.Sys().(syscall.WaitStatus).ExitStatus()
