@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"regexp"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -89,10 +90,10 @@ func runScripts(scripts []*Script) []*Measurement {
 			duration := time.Since(start).Seconds()
 
 			if err == nil {
-				log.Debugf("OK: %s (after %fs).", script.Name, duration)
+				log.Debugf("OK: %s to %s (after %fs).", script.Name, script.Target, duration)
 				success = 1
 			} else {
-				log.Infof("ERROR: %s: %s (failed after %fs).", script.Name, err, duration)
+				log.Infof("ERROR: %s to %s: %s (failed after %fs).", script.Name, script.Target, err, duration)
 			}
 
 			ch <- &Measurement{
