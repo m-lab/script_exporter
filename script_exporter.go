@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
 )
@@ -41,7 +41,6 @@ type Script struct {
 	Name    string `yaml:"name"`
 	Content string `yaml:"script"`
 	Timeout int64  `yaml:"timeout"`
-	Target  string
 }
 
 type Measurement struct {
@@ -51,12 +50,12 @@ type Measurement struct {
 	Duration float64
 }
 
-func runScript(script *Script) (err error, rc int) {
+func runScript(script *Script, target string) (err error, rc int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(script.Timeout)*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, *shell)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("TARGET=%s", script.Target))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("TARGET=%s", target))
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -78,7 +77,7 @@ func runScript(script *Script) (err error, rc int) {
 	return err, rc
 }
 
-func runScripts(scripts []*Script) []*Measurement {
+func runScripts(scripts []*Script, target string) []*Measurement {
 	measurements := make([]*Measurement, 0)
 
 	ch := make(chan *Measurement)
@@ -87,14 +86,14 @@ func runScripts(scripts []*Script) []*Measurement {
 		go func(script *Script) {
 			start := time.Now()
 			success := 0
-			err, rc := runScript(script)
+			err, rc := runScript(script, target)
 			duration := time.Since(start).Seconds()
 
 			if err == nil {
-				log.Debugf("OK: %s to %s (after %fs).", script.Name, script.Target, duration)
+				log.Debugf("OK: %s to %s (after %fs).", script.Name, target, duration)
 				success = 1
 			} else {
-				log.Infof("ERROR: %s to %s: %s (failed after %fs).", script.Name, script.Target, err, duration)
+				log.Infof("ERROR: %s to %s: %s (failed after %fs).", script.Name, target, err, duration)
 			}
 
 			ch <- &Measurement{
@@ -113,7 +112,7 @@ func runScripts(scripts []*Script) []*Measurement {
 	return measurements
 }
 
-func scriptFilter(scripts []*Script, name, pattern, target string) (filteredScripts []*Script, err error) {
+func scriptFilter(scripts []*Script, name, pattern string) (filteredScripts []*Script, err error) {
 	if name == "" && pattern == "" {
 		err = errors.New("`name` or `pattern` required")
 		return
@@ -129,12 +128,7 @@ func scriptFilter(scripts []*Script, name, pattern, target string) (filteredScri
 		}
 	}
 
-	if target != "" && !targetRegexp.MatchString(target) {
-		return
-	}
-
 	for _, script := range scripts {
-		script.Target = target
 		if script.Name == name || (pattern != "" && patternRegexp.MatchString(script.Name)) {
 			filteredScripts = append(filteredScripts, script)
 		}
@@ -149,14 +143,21 @@ func scriptRunHandler(w http.ResponseWriter, r *http.Request, config *Config) {
 	pattern := params.Get("pattern")
 	target := params.Get("target")
 
-	scripts, err := scriptFilter(config.Scripts, name, pattern, target)
+	scripts, err := scriptFilter(config.Scripts, name, pattern)
 
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
-	measurements := runScripts(scripts)
+	// If the passed target does not validate return an error.
+	if target != "" && !targetRegexp.MatchString(target) {
+		log.Infof("ERROR: Target %s failed to match targetRegexp", target)
+		http.Error(w, "Invalid target parameter", 400)
+		return
+	}
+
+	measurements := runScripts(scripts, target)
 
 	for _, measurement := range measurements {
 		fmt.Fprintf(w, "script_duration_seconds{script=\"%s\"} %f\n", measurement.Script.Name, measurement.Duration)

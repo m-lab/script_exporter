@@ -6,14 +6,23 @@ import (
 
 var config = &Config{
 	Scripts: []*Script{
-		{"success", "exit 0", 1, ""},
-		{"failure", "exit 1", 1, ""},
-		{"timeout", "sleep 5", 2, ""},
+		{"success", "exit 0", 1},
+		{"failure", "exit 1", 1},
+		{"timeout", "sleep 5", 2},
+		{"target", "testdata/check_target.sh", 5},
 	},
 }
 
+func TestTargetRegexp(t *testing.T) {
+	target := "example.com;rf -rf /"
+
+	if targetRegexp.MatchString(target) {
+		t.Errorf("Expected target to not match targetRegexp: %s", target)
+	}
+}
+
 func TestRunScripts(t *testing.T) {
-	measurements := runScripts(config.Scripts)
+	measurements := runScripts(config.Scripts, "fake-target")
 
 	expectedResults := map[string]struct {
 		success     int
@@ -22,6 +31,7 @@ func TestRunScripts(t *testing.T) {
 		"success": {1, 0},
 		"failure": {0, 0},
 		"timeout": {0, 2},
+		"target":  {1, 0},
 	}
 
 	for _, measurement := range measurements {
@@ -39,7 +49,7 @@ func TestRunScripts(t *testing.T) {
 
 func TestScriptFilter(t *testing.T) {
 	t.Run("RequiredParameters", func(t *testing.T) {
-		_, err := scriptFilter(config.Scripts, "", "", "")
+		_, err := scriptFilter(config.Scripts, "", "")
 
 		if err.Error() != "`name` or `pattern` required" {
 			t.Errorf("Expected failure when supplying no parameters")
@@ -47,7 +57,7 @@ func TestScriptFilter(t *testing.T) {
 	})
 
 	t.Run("NameMatch", func(t *testing.T) {
-		scripts, err := scriptFilter(config.Scripts, "success", "", "")
+		scripts, err := scriptFilter(config.Scripts, "success", "")
 
 		if err != nil {
 			t.Errorf("Unexpected: %s", err.Error())
@@ -59,7 +69,7 @@ func TestScriptFilter(t *testing.T) {
 	})
 
 	t.Run("PatternMatch", func(t *testing.T) {
-		scripts, err := scriptFilter(config.Scripts, "", "fail.*", "")
+		scripts, err := scriptFilter(config.Scripts, "", "fail.*")
 
 		if err != nil {
 			t.Errorf("Unexpected: %s", err.Error())
@@ -70,45 +80,15 @@ func TestScriptFilter(t *testing.T) {
 		}
 	})
 
-	t.Run("TargetSet", func(t *testing.T) {
-		scripts, err := scriptFilter(config.Scripts, "", ".*", "example.com")
-
-		if err != nil {
-			t.Errorf("Unexpected: %s", err.Error())
-		}
-
-		if len(scripts) != 3 {
-			t.Fatalf("Expected 3 scripts, received %d", len(scripts))
-		}
-
-		for i, script := range config.Scripts {
-			if script.Target != "example.com" {
-				t.Fatalf("Target not set on script %s", scripts[i].Name)
-			}
-		}
-	})
-
-	t.Run("TargetInvalid", func(t *testing.T) {
-		scripts, err := scriptFilter(config.Scripts, "success", "", "example.com;rm -rf /")
-
-		if err != nil {
-			t.Errorf("Unexpected: %s", err.Error())
-		}
-
-		if len(scripts) != 0 {
-			t.Fatalf("Expected 0 scripts, received %d", len(scripts))
-		}
-	})
-
 	t.Run("AllMatch", func(t *testing.T) {
-		scripts, err := scriptFilter(config.Scripts, "success", ".*", "")
+		scripts, err := scriptFilter(config.Scripts, "success", ".*")
 
 		if err != nil {
 			t.Errorf("Unexpected: %s", err.Error())
 		}
 
-		if len(scripts) != 3 {
-			t.Fatalf("Expected 3 scripts, received %d", len(scripts))
+		if len(scripts) != 4 {
+			t.Fatalf("Expected 4 scripts, received %d", len(scripts))
 		}
 
 		for i, script := range config.Scripts {
