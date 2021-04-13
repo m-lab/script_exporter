@@ -186,7 +186,7 @@ func main() {
 	// processes have completed running, you may end up with zombie processes
 	// that never get reaped. When the child does exit, and its parent parent
 	// process no longer exists, the OS will assign it to the next process up
-	// the line and send that process as SIGCHLD signal. The below goroutine
+	// the line and send that process a SIGCHLD signal. The below goroutine
 	// listens for that signal, and when received, will call wait() on that
 	// process to effectively clean it up.
 	sigc := make(chan os.Signal, 1)
