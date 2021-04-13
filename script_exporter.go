@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"syscall"
 	"time"
@@ -179,6 +180,34 @@ func main() {
 	}
 
 	log.Infoln("Starting script_exporter", version.Info())
+
+	// In the case where script_exporter kills its direct child process
+	// (/bin/sh), maybe due to reaching the script timeout, _before_ all child
+	// processes have completed running, you may end up with zombie processes
+	// that never get reaped. When the child does exit, and its parent parent
+	// process no longer exists, the OS will assign it to the next process up
+	// the line and send that process as SIGCHLD signal. The below goroutine
+	// listens for that signal, and when received, will call wait() on that
+	// process to effectively clean it up.
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, syscall.SIGCHLD)
+	go func() {
+		for {
+			select {
+			case <-sigc:
+				var wstatus syscall.WaitStatus
+				pid, err := syscall.Wait4(-1, &wstatus, 0, nil)
+				for syscall.EINTR == err {
+					pid, err = syscall.Wait4(-1, &wstatus, 0, nil)
+				}
+				if syscall.ECHILD == err {
+					break
+				}
+				log.Infof("Reaped child process: pid=%d, wstatus=%+v\n", pid, wstatus)
+			default:
+			}
+		}
+	}()
 
 	yamlFile, err := ioutil.ReadFile(*configFile)
 
