@@ -1,7 +1,12 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"os/signal"
+	"syscall"
 	"testing"
+	"time"
 )
 
 var config = &Config{
@@ -19,6 +24,39 @@ func TestTargetRegexp(t *testing.T) {
 	if targetRegexp.MatchString(target) {
 		t.Errorf("Expected target to not match targetRegexp: %s", target)
 	}
+}
+
+func TestReapChildren(t *testing.T) {
+	sigc := make(chan os.Signal, 1)
+	pidc := make(chan int)
+	signal.Notify(sigc, syscall.SIGCHLD)
+
+	go reapChildren(mainCtx, sigc, pidc)
+
+	// Start a process
+	cmd := exec.Command("sleep", "5")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("ERROR: %v", err)
+	}
+
+	// Kill the process, but do not call Wait()
+	childPid := cmd.Process.Pid
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("ERROR: %v", err)
+	}
+
+	// Check that reapChildren() reaped the orphan
+	select {
+	case pid := <-pidc:
+		if pid != childPid {
+			t.Fatalf("Unexpected pid: %d != %d", pid, childPid)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Should have reaped %d, but didn't", childPid)
+	}
+
+	// Cancel the context
+	mainCancel()
 }
 
 func TestRunScripts(t *testing.T) {

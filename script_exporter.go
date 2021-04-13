@@ -31,7 +31,8 @@ var (
 	// A regex pattern that only matches valid ASCII domain name characters to
 	// prevent inadvertent or malicious injection of special shell characters
 	// into the scripts environment.
-	targetRegexp = regexp.MustCompile("^[a-zA-Z0-9-.]{4,253}$")
+	targetRegexp        = regexp.MustCompile("^[a-zA-Z0-9-.]{4,253}$")
+	mainCtx, mainCancel = context.WithCancel(context.Background())
 )
 
 type Config struct {
@@ -167,6 +168,34 @@ func scriptRunHandler(w http.ResponseWriter, r *http.Request, config *Config) {
 	}
 }
 
+// reapChildren cleans up orphaned, exited child processes. In the case where
+// script_exporter kills its direct child process (/bin/sh), maybe due to
+// reaching the script timeout, _before_ all child processes have completed
+// running, you may end up with zombie processes that never get reaped. When the
+// child does exit, and its parent parent process no longer exists, the OS will
+// assign it to the next process up the line and send that process a SIGCHLD
+// signal. reapChildren() listens for that signal, and when received, will call
+// wait() on that process to effectively clean it up.
+func reapChildren(ctx context.Context, sigc chan os.Signal, pidc chan int) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigc:
+			var wstatus syscall.WaitStatus
+			pid, err := syscall.Wait4(-1, &wstatus, syscall.WNOHANG, nil)
+			for syscall.EINTR == err {
+				pid, err = syscall.Wait4(-1, &wstatus, syscall.WNOHANG, nil)
+			}
+			if syscall.ECHILD == err {
+				break
+			}
+			pidc <- pid
+			log.Infof("Reaped child process: pid=%d, wstatus=%+v\n", pid, wstatus)
+		}
+	}
+}
+
 func init() {
 	prometheus.MustRegister(version.NewCollector("script_exporter"))
 }
@@ -181,33 +210,11 @@ func main() {
 
 	log.Infoln("Starting script_exporter", version.Info())
 
-	// In the case where script_exporter kills its direct child process
-	// (/bin/sh), maybe due to reaching the script timeout, _before_ all child
-	// processes have completed running, you may end up with zombie processes
-	// that never get reaped. When the child does exit, and its parent parent
-	// process no longer exists, the OS will assign it to the next process up
-	// the line and send that process a SIGCHLD signal. The below goroutine
-	// listens for that signal, and when received, will call wait() on that
-	// process to effectively clean it up.
+	// Clean up zombie child processes
 	sigc := make(chan os.Signal, 1)
+	pidc := make(chan int)
 	signal.Notify(sigc, syscall.SIGCHLD)
-	go func() {
-		for {
-			select {
-			case <-sigc:
-				var wstatus syscall.WaitStatus
-				pid, err := syscall.Wait4(-1, &wstatus, 0, nil)
-				for syscall.EINTR == err {
-					pid, err = syscall.Wait4(-1, &wstatus, 0, nil)
-				}
-				if syscall.ECHILD == err {
-					break
-				}
-				log.Infof("Reaped child process: pid=%d, wstatus=%+v\n", pid, wstatus)
-			default:
-			}
-		}
-	}()
+	go reapChildren(mainCtx, sigc, pidc)
 
 	yamlFile, err := ioutil.ReadFile(*configFile)
 
