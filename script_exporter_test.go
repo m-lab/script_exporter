@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -28,10 +29,9 @@ func TestTargetRegexp(t *testing.T) {
 
 func TestReapChildren(t *testing.T) {
 	sigc := make(chan os.Signal, 1)
-	pidc := make(chan int)
 	signal.Notify(sigc, syscall.SIGCHLD)
 
-	go reapChildren(mainCtx, sigc, pidc)
+	go reapChildren(mainCtx, sigc)
 
 	// Start a process
 	cmd := exec.Command("sleep", "5")
@@ -45,14 +45,13 @@ func TestReapChildren(t *testing.T) {
 		t.Fatalf("ERROR: %v", err)
 	}
 
-	// Check that reapChildren() reaped the orphan
-	select {
-	case pid := <-pidc:
-		if pid != childPid {
-			t.Fatalf("Unexpected pid: %d != %d", pid, childPid)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatalf("Should have reaped %d, but didn't", childPid)
+	// Give reapChildren() a brief period to remove the orphaned process
+	time.Sleep(1 * time.Second)
+
+	// This is a fairly crude way of checking whether the process was cleaned
+	// up, but seems to work well enough for a very crude unit test.
+	if _, err := os.Stat(fmt.Sprintf("/proc/%d", childPid)); !os.IsNotExist(err) {
+		t.Fatalf("ERROR: process %d still exists, but should not.", childPid)
 	}
 
 	// Cancel the context

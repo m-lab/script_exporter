@@ -176,7 +176,7 @@ func scriptRunHandler(w http.ResponseWriter, r *http.Request, config *Config) {
 // assign it to the next process up the line and send that process a SIGCHLD
 // signal. reapChildren() listens for that signal, and when received, will call
 // wait() on that process to effectively clean it up.
-func reapChildren(ctx context.Context, sigc chan os.Signal, pidc chan int) {
+func reapChildren(ctx context.Context, sigc chan os.Signal) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -190,8 +190,9 @@ func reapChildren(ctx context.Context, sigc chan os.Signal, pidc chan int) {
 			if syscall.ECHILD == err {
 				break
 			}
-			pidc <- pid
-			log.Infof("Reaped child process: pid=%d, wstatus=%+v\n", pid, wstatus)
+			if pid != 0 {
+				log.Infof("Reaped child process: pid=%d, wstatus=%+v", pid, wstatus)
+			}
 		}
 	}
 }
@@ -212,9 +213,8 @@ func main() {
 
 	// Clean up zombie child processes
 	sigc := make(chan os.Signal, 1)
-	pidc := make(chan int)
 	signal.Notify(sigc, syscall.SIGCHLD)
-	go reapChildren(mainCtx, sigc, pidc)
+	go reapChildren(mainCtx, sigc)
 
 	yamlFile, err := ioutil.ReadFile(*configFile)
 
