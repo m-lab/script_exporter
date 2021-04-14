@@ -1,13 +1,7 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"os/signal"
-	"syscall"
 	"testing"
-	"time"
 )
 
 var config = &Config{
@@ -25,37 +19,6 @@ func TestTargetRegexp(t *testing.T) {
 	if targetRegexp.MatchString(target) {
 		t.Errorf("Expected target to not match targetRegexp: %s", target)
 	}
-}
-
-func TestReapChildren(t *testing.T) {
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, syscall.SIGCHLD)
-
-	go reapChildren(mainCtx, sigc)
-
-	// Start a process
-	cmd := exec.Command("sleep", "5")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("ERROR: %v", err)
-	}
-
-	// Kill the process, but do not call Wait()
-	childPid := cmd.Process.Pid
-	if err := cmd.Process.Kill(); err != nil {
-		t.Fatalf("ERROR: %v", err)
-	}
-
-	// Give reapChildren() a brief period to remove the orphaned process
-	time.Sleep(1 * time.Second)
-
-	// This is a fairly crude way of checking whether the process was cleaned
-	// up, but seems to work well enough for a very crude unit test.
-	if _, err := os.Stat(fmt.Sprintf("/proc/%d", childPid)); !os.IsNotExist(err) {
-		t.Fatalf("ERROR: process %d still exists, but should not.", childPid)
-	}
-
-	// Cancel the context
-	mainCancel()
 }
 
 func TestRunScripts(t *testing.T) {

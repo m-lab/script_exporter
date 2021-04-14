@@ -211,8 +211,10 @@ func main() {
 
 	log.Infoln("Starting script_exporter", version.Info())
 
-	// Clean up zombie child processes
-	sigc := make(chan os.Signal, 1)
+	// Clean up zombie child processes.
+	// Set the channel buffer quite high, since script_exporter may possibly be
+	// running hundreds of tests simultaneously.
+	sigc := make(chan os.Signal, 500)
 	signal.Notify(sigc, syscall.SIGCHLD)
 	go reapChildren(mainCtx, sigc)
 
