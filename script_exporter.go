@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/version"
 )
 
@@ -73,7 +73,7 @@ func runScript(script *Script, target string) (err error, rc int) {
 			rc = exitError.Sys().(syscall.WaitStatus).ExitStatus()
 
 		} else {
-			log.Infof("ERROR: cmd.Run() failed with error: %v", err)
+			log.Printf("ERROR: cmd.Run() failed with error: %v\n", err)
 			rc = 1
 		}
 	} else {
@@ -96,10 +96,10 @@ func runScripts(scripts []*Script, target string) []*Measurement {
 			duration := time.Since(start).Seconds()
 
 			if err == nil {
-				log.Debugf("OK: %s to %s (after %fs).", script.Name, target, duration)
+				log.Printf("OK: %s to %s (after %fs).\n", script.Name, target, duration)
 				success = 1
 			} else {
-				log.Infof("ERROR: %s to %s: %s (failed after %fs).", script.Name, target, err, duration)
+				log.Printf("ERROR: %s to %s: %s (failed after %fs).\n", script.Name, target, err, duration)
 			}
 
 			ch <- &Measurement{
@@ -158,7 +158,7 @@ func scriptRunHandler(w http.ResponseWriter, r *http.Request, config *Config) {
 
 	// If the passed target does not validate return an error.
 	if target != "" && !targetRegexp.MatchString(target) {
-		log.Infof("ERROR: Target %s failed to match targetRegexp", target)
+		log.Printf("ERROR: Target %s failed to match targetRegexp\n", target)
 		http.Error(w, "Invalid target parameter", 400)
 		return
 	}
@@ -184,12 +184,12 @@ func main() {
 		os.Exit(0)
 	}
 
-	log.Infoln("Starting script_exporter", version.Info())
+	log.Println("Starting script_exporter", version.Info())
 
 	yamlFile, err := ioutil.ReadFile(*configFile)
 
 	if err != nil {
-		log.Fatalf("Error reading config file: %s", err)
+		log.Fatalf("Error reading config file: %s\n", err)
 	}
 
 	config := Config{}
@@ -197,10 +197,10 @@ func main() {
 	err = yaml.Unmarshal(yamlFile, &config)
 
 	if err != nil {
-		log.Fatalf("Error parsing config file: %s", err)
+		log.Fatalf("Error parsing config file: %s\n", err)
 	}
 
-	log.Infof("Loaded %d script configurations", len(config.Scripts))
+	log.Printf("Loaded %d script configurations\n", len(config.Scripts))
 
 	for _, script := range config.Scripts {
 		if script.Timeout == 0 {
@@ -224,9 +224,9 @@ func main() {
 			</html>`))
 	})
 
-	log.Infoln("Listening on", *listenAddress)
+	log.Println("Listening on", *listenAddress)
 
 	if err := http.ListenAndServe(*listenAddress, nil); err != nil {
-		log.Fatalf("Error starting HTTP server: %s", err)
+		log.Fatalf("Error starting HTTP server: %s\n", err)
 	}
 }
