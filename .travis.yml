@@ -1,11 +1,11 @@
 language: go
 
 go:
-- 1.15.x
+- 1.18.x
 
 before_script:
-- go get golang.org/x/tools/cmd/cover
-- go get github.com/mattn/goveralls
+- go install golang.org/x/tools/cmd/cover@latest
+- go install github.com/mattn/goveralls@latest
 
 script:
 - go get -t ./...
